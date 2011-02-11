@@ -8,6 +8,9 @@
     Of course English or any other language could be used in the sample text.
     
     See more details at http://exyr.org/2011/random-pronounceable-passwords/
+    
+    Author: Simon Sapin
+    License: BSD
 
 """
 
