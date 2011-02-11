@@ -1,5 +1,22 @@
 # coding: utf8
-import string, itertools, random
+"""
+
+    Use Markov chains to generate random text that sounds Japanese.
+    This makes random pronounceable passwords that are both strong and easy
+    to memorize.
+    
+    Of course English or any other language could be used in the sample text.
+    
+    See more details at http://exyr.org/2011/random-pronounceable-passwords/
+
+"""
+
+from __future__ import division
+import string
+import itertools
+import collections
+import random
+
 
 # This is a romanization of the opening of "Genji Monogatari"
 # by Murasaki Shikibu.
@@ -66,84 +83,82 @@ hoka ni utusa se tamahi te, Uhe-tubone ni tamaha su. Sono urami masite yara m
 kata nasi.
 '''
 
-    
-def get_letter_positions(alphabet, characters):
-    """
-    Map characters to their position in alphabet and filter out these
-    that are not in alphabet.
-    
-    >>> list(get_letter_positions('abc', 'b + c = a'))
-    [1, 2, 0]
-    """
-    # str.find returns -1 for "not found"
-    return (p for p in (alphabet.find(c) for c in characters) if p >= 0)
 
 def pairwise(iterable):
-    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
-    # stolen from http://docs.python.org/library/itertools.html#recipes
-    a, b = itertools.tee(iterable)
-    next(b, None)
-    return itertools.izip(a, b)
-
-class MarkovFrequencies(object):
-    def __init__(self, frequencies):
-        # frequencies[p][s] is the number of times that s appeared after p
-        # in states.
-        self.frequencies = [(f, sum(f)) for f in frequencies]
+    """
+    Yield pairs of consecutive elements in iterable.
     
-    @classmethod
-    def from_chain(cls, nb_states, chain):
-        """
-        chain must be an iterable of state integers
-        so that 0 <= state < nb_states
-        """
-        def assert_range(chain):
-            for s in chain:
-                assert 0 <= s < nb_states
-                yield s
-        chain = assert_range(chain)
-        # We can’t use [[0] * nb_states] * nb_states as the inner
-        # lists would all be references to a single mutable object
-        frequencies = [[0] * nb_states for i in xrange(nb_states)]
-        for previous, current in pairwise(chain):
-            if previous is not None:
-                frequencies[previous][current] += 1
+    >>> list(pairwise('abcd'))
+    [('a', 'b'), ('b', 'c'), ('c', 'd')]
+    """
+    iterator = iter(iterable)
+    try:
+        a = iterator.next()
+    except StopIteration:
+        return
+    for b in iterator:
+        yield a, b
+        a = b
+
+
+class MarkovChain(object):
+    """
+    If a system transits from a state to another and the next state depends
+    only on the current state and not the past, it is said to be a Markov chain.
+    
+    It is determined by the probability of each next state from any current
+    state.
+    
+    See http://en.wikipedia.org/wiki/Markov_chain
+    
+    The probabilities are built from the frequencies in the `sample` chain.
+    Elements of the sample that are not a valid state are ignored.
+    """
+    def __init__(self, sample):
+        counts = collections.defaultdict(lambda: collections.defaultdict(int))
+        for current, next in pairwise(sample):
+            counts[current][next] += 1
         
-        return cls(frequencies)
+        probabilities = {}
+        for current, next_counts in counts.iteritems():
+            total = sum(next_counts.itervalues())
+            
+            accumulated_count = 0
+            next_probabilities = []
+            for next, count in next_counts.iteritems():
+                accumulated_count += count
+                next_probabilities.append((next, accumulated_count / total))
+            probabilities[current] = next_probabilities
+        self.accumulated_probabilities = probabilities
 
     def next(self, state):
-        frequencies, total = self.frequencies[state]
-        rand = random.random() * total
-        for next_state, frequency in enumerate(frequencies):
-            if rand < frequency:
+        """
+        Choose at random and return a next state from a current state,
+        according to the probabilities for this chain
+        """
+        # Like random.choice() but with a different weight of each element.
+        rand = random.random()
+        nexts = self.accumulated_probabilities[state]
+        # Using bisection here could be faster, but simplicity prevailed.
+        # (Also it’s not that slow with 26 states.)
+        for next_state, accumulated_probability in nexts:
+            if rand < accumulated_probability:
                 return next_state
-            rand -= frequency
     
-    def make_chain(self, initial_state):
-        state = initial_state
+    def __iter__(self):
+        """
+        Return an infinite iterator of states.
+        """
+        state = random.choice(self.accumulated_probabilities.keys())
         while True:
             state = self.next(state)
             yield state
 
-
-class TextMarkovFrequencies(object):
-    def __init__(self, alphabet, chars):
-        chain = get_letter_positions(alphabet, chars)
-        self.frequencies = MarkovFrequencies.from_chain(len(alphabet), chain)
-        self.alphabet = alphabet
-
-    def make_chain(self, initial_letter):
-        initial_state = self.alphabet.find(initial_letter)
-        assert initial_state >= 0 # ie. initial_letter in self.alphabet
-        return (
-            self.alphabet[state] for state in
-            self.frequencies.make_chain(initial_state)
-        )
-
-
 def main():
-    f = TextMarkovFrequencies(string.ascii_lowercase, japanese.lower())
-    print ''.join(itertools.islice(f.make_chain('a'), 14))
+    chain = MarkovChain(
+        c for c in japanese.lower() if c in string.ascii_lowercase
+    )
+    print ''.join(itertools.islice(chain, 14))
 
 if __name__ == '__main__':
     main()
