@@ -17,8 +17,8 @@
 from __future__ import division
 import string
 import itertools
-import collections
 import random
+from collections import defaultdict
 
 
 # This is a romanization of the opening of "Genji Monogatari"
@@ -118,41 +118,36 @@ class MarkovChain(object):
     Elements of the sample that are not a valid state are ignored.
     """
     def __init__(self, sample):
-        counts = collections.defaultdict(lambda: collections.defaultdict(int))
+        self.counts = counts = defaultdict(lambda: defaultdict(int))
         for current, next in pairwise(sample):
             counts[current][next] += 1
         
-        probabilities = {}
-        for current, next_counts in counts.iteritems():
-            total = sum(next_counts.itervalues())
-            
-            accumulated_count = 0
-            next_probabilities = []
-            for next, count in next_counts.iteritems():
-                accumulated_count += count
-                next_probabilities.append((next, accumulated_count / total))
-            probabilities[current] = next_probabilities
-        self.accumulated_probabilities = probabilities
+        self.totals = dict(
+            (current, sum(next_counts.itervalues()))
+            for current, next_counts in counts.iteritems()
+        )
+        
 
     def next(self, state):
         """
         Choose at random and return a next state from a current state,
         according to the probabilities for this chain
         """
-        # Like random.choice() but with a different weight of each element.
-        rand = random.random()
-        nexts = self.accumulated_probabilities[state]
+        nexts = self.counts[state].iteritems()
+        # Like random.choice() but with a different weight for each element
+        rand = random.randrange(0, self.totals[state])
         # Using bisection here could be faster, but simplicity prevailed.
-        # (Also it’s not that slow with 26 states.)
-        for next_state, accumulated_probability in nexts:
-            if rand < accumulated_probability:
+        # (Also it’s not that slow with 26 states or so.)
+        for next_state, weight in nexts:
+            if rand < weight:
                 return next_state
+            rand -= weight
     
     def __iter__(self):
         """
         Return an infinite iterator of states.
         """
-        state = random.choice(self.accumulated_probabilities.keys())
+        state = random.choice(self.counts.keys())
         while True:
             state = self.next(state)
             yield state
