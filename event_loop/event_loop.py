@@ -97,9 +97,7 @@ class EventLoop(object):
     """
     def __init__(self):
         self._timers = TimerManager()
-        self._running = False
-        self._file_descriptors = []
-        self._callbacks = {}
+        self._readers = {}
     
     def add_timer(self, timeout, repeat=False):
         """
@@ -134,8 +132,7 @@ class EventLoop(object):
         file_descriptor = self._normalize_fd(file_descriptor)
         
         def decorator(callback):
-            self._file_descriptors.append(file_descriptor)
-            self._callbacks[file_descriptor] = callback
+            self._readers[file_descriptor] = callback
             return callback
         return decorator
 
@@ -153,9 +150,9 @@ class EventLoop(object):
         self._running = True
         while self._running:
             timeout = self._timers.sleep_time()
-            if self._file_descriptors:
+            if self._readers:
                 ready, _, _ = select.select(
-                    self._file_descriptors, [], [], timeout)
+                    self._readers.keys(), [], [], timeout)
             else:
                 assert timeout is not None, 'Running without any event'
                 # Some systems do not like 3 empty lists for select()
@@ -163,7 +160,7 @@ class EventLoop(object):
                 ready = []
             self._timers.run()
             for fd in ready:
-                self._callbacks[fd]()
+                self._readers[fd]()
 
     def stop(self):
         """
