@@ -9,6 +9,7 @@
 import unittest
 import os
 import time
+import logging
 
 from event_loop import TimerManager, EventLoop
 from packet_reader import PacketReader
@@ -406,6 +407,9 @@ class TestPacketReader(unittest.TestCase):
 
             def callback(packet):
                 packets.append(packet)
+                assert packet_reader.dropped_bytes == {
+                    1: 0,  2: 1,  3: 3,  4: 6
+                }[len(packets)]
                 if len(packets) == len(original_packets):
                     loop.stop()
 
@@ -420,7 +424,8 @@ class TestPacketReader(unittest.TestCase):
                 
             # Choose a very small block size on purpose to (hopefully)
             # test more code paths such as half packets
-            PacketReader(loop, reader, callback, max_block_size=3)
+            packet_reader = PacketReader(loop, reader, callback,
+                                         max_block_size=3)
             loop.run()
             assert packets == original_packets
         finally:

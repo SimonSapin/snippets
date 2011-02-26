@@ -34,6 +34,7 @@ class PacketReader(object):
         self.port = serial_port
         self.callback = callback
         self.in_packet = False
+        self.dropped_bytes = 0
         loop.push_back_reader(serial_port, max_block_size)(self.new_block)
     
     def new_block(self, data, push_back):
@@ -50,7 +51,7 @@ class PacketReader(object):
                         # Could be the first half of a delimiter
                         push_back(self.PACKET_DELIMITER[0])
                         dropped -= 1
-                    logging.info('Dropped %i non-packet bytes', dropped)
+                    self._log_dropped_bytes(dropped)
                     # Wait for more data
                     return
                 # Packet starts here
@@ -81,8 +82,7 @@ class PacketReader(object):
         except ValueError:
             # No delimiter here :(
             return None
-        if delimiter_position > 0:
-            logging.info('Dropped %i non-packet bytes', delimiter_position)
+        self._log_dropped_bytes(delimiter_position)
         packet_start = delimiter_position + len(self.PACKET_DELIMITER)
         # Packet content (including the length byte) starts here:
         return data[packet_start:]
@@ -101,5 +101,11 @@ class PacketReader(object):
         self.callback(packet)
         remaining_data = data[length:]
         return remaining_data
+
+    def _log_dropped_bytes(self, amount):
+        assert amount >= 0
+        self.dropped_bytes += amount
+        if amount > 0:
+            logging.info('Dropped %i non-packet bytes', amount)
 
 
