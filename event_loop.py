@@ -1,7 +1,7 @@
 import sys
 import os
 import time
-import math
+import select
 
 
 class TimerManager(object):
@@ -67,4 +67,86 @@ class TimerManager(object):
         sleep = earliest - self._now()
         return sleep if sleep > 0 else 0
             
+
+class EventLoop(object):
+    """
+    Manage callback functions to be called on certain events.
+    Currently supported events are:
+    
+     * Timers (same as TimerManager)
+     * File descriptors ready for reading. (Waited for using `select.select()`)
+    """
+    def __init__(self):
+        self._timers = TimerManager()
+        self._running = False
+        self._file_descriptors = []
+        self._callbacks = {}
+    
+    def add_timer(self, timeout, repeat=False):
+        """
+        Decorator factory for adding a timer:
+            
+            @loop.add_timer(1)
+            def one_second_from_now():
+                # callback code
+        """
+        def decorator(callback):
+            self._timers.add_timer(timeout, callback, repeat)
+            return callback
+        return decorator
+    
+    def watch_for_reading(self, file_descriptor):
+        """
+        Decorator factory for watching a file descriptor. The decorated
+        callback is called when the file descriptor is ready for reading.
+        
+        Takes either a file descriptor (integer) or a file object with a
+        `fileno()` method that returns one.
+            
+            @loop.watch_for_reading(sys.stdin)
+            def one_second_from_now():
+                data = os.read(sys.stdin.fileno(), 255)
+                # ...
+                
+        Use `os.read()` instead of `some_file.read()` to read just what is
+        available and avoid blocking, without the file actually being in
+        non-blocking mode.
+        """
+        if not isinstance(file_descriptor, (int, long)):
+            file_descriptor = fd.fileno()
+            
+        def decorator(callback):
+            self._file_descriptors.append(file_descriptor)
+            self._callbacks[file_descriptor] = callback
+            return callback
+        return decorator
+    
+    def run(self):
+        """
+        Run the event loop. Wait for events, call callbacks when events happen,
+        and only return when the `stop()` is called.
+        """
+        self._running = True
+        while self._running:
+            timeout = self._timers.sleep_time()
+            if self._file_descriptors:
+                ready, _, _ = select.select(
+                    self._file_descriptors, [], [], timeout)
+            else:
+                # Some systems do not like 3 empty lists for select()
+                time.sleep(timeout)
+                ready = []
+            self._timers.run()
+            for fd in ready:
+                self._callbacks[fd]()
+
+    def stop(self):
+        """
+        Signal the event loop to stop before doing another iteration.
+        
+        Since the point of the event loop is to avoid threads, this will
+        probably be called from an event callback.
+        """
+        self._running = False
+
 
