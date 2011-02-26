@@ -11,6 +11,7 @@ import os
 import time
 
 from event_loop import TimerManager, EventLoop
+from packet_reader import PacketReader
 
 
 class TestingTimeFunction(object):
@@ -389,6 +390,44 @@ class TestPushBack(unittest.TestCase):
             os.close(reader)
             os.close(writer)
 
+
+class TestPacketReader(unittest.TestCase):
+    def test_packets(self):
+        reader, writer = os.pipe()
+        try:
+            loop = EventLoop()
+            original_packets = [
+                'foo',
+                '',
+                'Lorem ipsum dolor sit amet.',
+                '42',
+            ]
+            packets = []
+
+            def callback(packet):
+                packets.append(packet)
+                if len(packets) == len(original_packets):
+                    loop.stop()
+
+            def write(data):
+                assert os.write(writer, data) == len(data)
+                
+            for i, packet in enumerate(original_packets):
+                write('blah'[:i]) # non-packet garbage
+                write(PacketReader.PACKET_DELIMITER)
+                write(chr(len(packet) + 1))
+                write(packet)
+                
+            # Choose a very small block size on purpose to (hopefully)
+            # test more code paths such as half packets
+            PacketReader(loop, reader, callback, max_block_size=3)
+            loop.run()
+            assert packets == original_packets
+        finally:
+            os.close(reader)
+            os.close(writer)
+        
+        
 
 if __name__ == '__main__':
     unittest.main()
