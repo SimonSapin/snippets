@@ -131,15 +131,20 @@ class EventLoop(object):
         available and avoid blocking, without the file actually being in
         non-blocking mode.
         """
-        if not isinstance(file_descriptor, (int, long)):
-            file_descriptor = fd.fileno()
-            
+        file_descriptor = self._normalize_fd(file_descriptor)
+        
         def decorator(callback):
             self._file_descriptors.append(file_descriptor)
             self._callbacks[file_descriptor] = callback
             return callback
         return decorator
-    
+
+    def _normalize_fd(self, fd):
+        if isinstance(fd, (int, long)):
+            return fd
+        else:
+            return fd.fileno()
+            
     def run(self):
         """
         Run the event loop. Wait for events, call callbacks when events happen,
@@ -170,3 +175,52 @@ class EventLoop(object):
         self._running = False
 
 
+def line_reader(loop, fd, block_size=1024):
+    """
+    Wrap a read callback to read lines:
+    
+        @line_reader(loop, sys.stdin)
+        def new_line(line):
+            print 'Read on line standard input: %r' % line
+    """
+    fd = loop._normalize_fd(fd)
+    def decorator(callback):
+        buffers = []
+        @loop.watch_for_reading(fd)
+        def reader():
+            buf = os.read(fd, block_size)
+            while 1:
+                try:
+                    end = buf.index('\n')
+                except ValueError:
+                    # no newline here
+                    break
+                else:
+                    end += 1 # include the newline char
+                    buffers.append(buf[:end])
+                    line = ''.join(buffers)
+                    buffers[:] = []
+                    callback(line)
+                    buf = buf[end:]
+            if buf:
+                buffers.append(buf)
+        return callback
+    return decorator
+
+
+if __name__ == '__main__':
+    loop = EventLoop()
+    
+    @line_reader(loop, sys.stdin)
+    def new_line(line):
+        line = line.strip()
+        if line == 'exit':
+            loop.stop()
+        print line
+    
+    @loop.add_timer(5, repeat=True)
+    def five():
+        print '5 seconds passed.'
+    
+    print 'Echoing lines. Type "exit" to stop.'
+    loop.run()

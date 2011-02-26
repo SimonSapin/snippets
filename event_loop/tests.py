@@ -248,6 +248,88 @@ class TestEventLoop(unittest.TestCase):
             os.close(writer)
 
 
+class TestLineReader(unittest.TestCase):
+    def test_line_reader(self):
+        reader, writer = os.pipe()
+        try:
+            loop = EventLoop()
+            
+            data = [
+                'Lorem ipsum\n',
+                'dolor\nsit\namet, ',
+                'consectetur',
+                ' adipiscing ',
+                'elit.\nAliquam magna dolor, ', # no newline character at the end
+            ]
+            # Reverse because list.pop() pops at the end.
+            data = data[::-1]
+            
+            start = time.time()
+            @loop.add_timer(.01, repeat=True)
+            def slow_write():
+                if data:
+                    d = data.pop()
+                    assert os.write(writer, d) == len(d)
+                else:
+                    loop.stop()
+            
+            lines = []
+            line_reader(loop, reader, block_size=5)(lines.append)
+                
+            loop.run()
+            
+            assert lines == [
+                'Lorem ipsum\n',
+                'dolor\n',
+                'sit\n',
+                'amet, consectetur adipiscing elit.\n'
+            ]
+        finally:
+            os.close(reader)
+            os.close(writer)
+        
+    def test_timing(self):
+        reader, writer = os.pipe()
+        try:
+            loop = EventLoop()
+            
+            data = [
+                'Lorem ipsum\n',
+                'dolor\nsit\namet, ',
+                'consectetur',
+                ' adipiscing ',
+                'elit.\nAliquam magna dolor, ', # no newline character at the end
+            ]
+            # Reverse because list.pop() pops at the end.
+            data = data[::-1]
+            
+            start = time.time()
+            @loop.add_timer(.01, repeat=True)
+            def slow_write():
+                if data:
+                    os.write(writer, data.pop())
+                else:
+                    loop.stop()
+            
+            lines = []
+            @line_reader(loop, reader)
+            def new_line(line):
+                lines.append(line)
+                expected_time = {
+                    'L': .01, 'd': .02, 's': .02, 'a': .05}[line[0]]
+                assert round(time.time() - start, 2) == expected_time
+                
+            loop.run()
+            
+            assert lines == [
+                'Lorem ipsum\n',
+                'dolor\n',
+                'sit\n',
+                'amet, consectetur adipiscing elit.\n'
+            ]
+        finally:
+            os.close(reader)
+            os.close(writer)
         
         
 if __name__ == '__main__':
