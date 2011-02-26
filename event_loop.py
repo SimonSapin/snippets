@@ -6,41 +6,53 @@ import math
 
 class TimerManager(object):
     """
+    TimerManager handle multiple timers.
+
     Not thread-safe, but the point is to avoid threads anyway.
     """
-    def __init__(self):
+    def __init__(self, _time_function=time.time):
+        """
+        `_time_function` is meant as a dependency injection for testing.
+        """
         self._timers = []
+        self._now = _time_function
         
     def add_timer(self, timeout, callback, repeat=False):
         """
-        Add a timer with `callback` to expire in `timeout` seconds.
-        The timer is recurring if `repeat` is true.
+        Add a timer with `callback`, expiring `timeout` seconds from now and,
+        if `repeat` is true, every `timeout` seconds after that.
         """
         assert timeout > 0
-        next = time.time() + timeout # Next time this timer expires
+        next = self._now() + timeout # Next time this timer expires
         interval = timeout if repeat else None
         self._timers.append((next, interval, callback))
     
     def run(self):
         """
-        Handle timers that have expired
+        Call without arguments the callback of every expired timer.
+        
+        Each callback is called at most once, even if a repeating timer
+        expired several times since last time `run()` was called.
         """
         indices_to_remove = []
         
         for index, (next, interval, callback) in enumerate(self._timers):
-            if next > time.time():
+            if next > self._now():
                 continue
             callback()
             if interval:
                 # Repeating timer: update the expiry time.
-                next += math.ceil((time.time() - next) / interval) * interval
+                # Has expired that many times since last run().
+                # Call self._now() again since callback() may have taken time.
+                times = (self._now() - next) // interval + 1
+                next += times * interval
                 self._timers[index] = (next, interval, callback)
             else:
                 # Not repeating: remove.
                 # Removing disrupts iteration: do it later.
                 indices_to_remove.append(index)
         
-        # Indices_to_remove is in increasing order.
+        # indices_to_remove is in increasing order.
         # Remove in decreasing order since removing changes the meaning of
         # greater indices.
         for index in reversed(indices_to_remove):
@@ -49,33 +61,10 @@ class TimerManager(object):
     def sleep_time(self):
         """
         How much time you can wait before `run()` does something.
+        Raises ValueError if no timer is registered.
         """
         earliest, _, _ = min(self._timers)
-        sleep = earliest - time.time()
+        sleep = earliest - self._now()
         return sleep if sleep > 0 else 0
             
 
-def test_timers():
-    manager = TimerManager()
-    start = time.time()
-    
-    def printer(message, interval):
-        def callback():
-            t = time.time() - start
-            print t, t % interval, message
-        return callback
-
-    manager.add_timer(5, printer('5 seconds', 5))
-    manager.add_timer(1, printer('1 second timer', 1), repeat=True)
-    manager.add_timer(1.3, printer('1.3 second timer', 1.3), repeat=True)
-    
-    while 1:
-        time.sleep(manager.sleep_time() + 0.1)
-        manager.run()
-
-
-def main():
-    test_timers()
-    
-if __name__ == '__main__':
-    main()
