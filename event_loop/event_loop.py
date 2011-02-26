@@ -78,8 +78,10 @@ class TimerManager(object):
     def sleep_time(self):
         """
         How much time you can wait before `run()` does something.
-        Raises ValueError if no timer is registered.
+        Return None if no timer is registered.
         """
+        if not self._timers:
+            return None
         earliest, _, _ = min(self._timers)
         sleep = earliest - self._now()
         return sleep if sleep > 0 else 0
@@ -150,6 +152,7 @@ class EventLoop(object):
                 ready, _, _ = select.select(
                     self._file_descriptors, [], [], timeout)
             else:
+                assert timeout is not None, 'Running without any event'
                 # Some systems do not like 3 empty lists for select()
                 time.sleep(timeout)
                 ready = []

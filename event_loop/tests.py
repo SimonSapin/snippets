@@ -41,7 +41,7 @@ class TestTimerManager(unittest.TestCase):
 
     def test_empty_timer_list(self):
         manager = TimerManager()
-        self.assertRaises(ValueError, manager.sleep_time)
+        assert manager.sleep_time() is None
     
     def test_invalid_timeouts(self):
         manager = TimerManager()
@@ -72,7 +72,7 @@ class TestTimerManager(unittest.TestCase):
         manager.run()
         assert callback.nb_calls == 1
         # Timer was removed from the list
-        self.assertRaises(ValueError, manager.sleep_time)
+        assert manager.sleep_time() is None
 
         time.time = 100
         manager.run()
@@ -191,6 +191,25 @@ class TestTimerManager(unittest.TestCase):
 
 
 class TestEventLoop(unittest.TestCase):
+    def test_simple_pipe(self):
+        reader, writer = os.pipe()
+        try:
+            loop = EventLoop()
+            nb_reads = [0]
+
+            @loop.watch_for_reading(reader)
+            def incoming():
+                assert os.read(reader, 255) == 'foo'
+                nb_reads[0] += 1
+                loop.stop()
+            
+            assert os.write(writer, 'foo') == 3
+            loop.run()
+            assert nb_reads[0] == 1
+        finally:
+            os.close(reader)
+            os.close(writer)
+
     def test_pipe(self):
         reader, writer = os.pipe()
         try:
@@ -210,7 +229,7 @@ class TestEventLoop(unittest.TestCase):
             
             @loop.add_timer(interval, repeat=True)
             def write_something():
-                os.write(writer, 'foo')
+                assert os.write(writer, 'foo') == 3
                 nb_writes[0] += 1
 
             @loop.watch_for_reading(reader)
