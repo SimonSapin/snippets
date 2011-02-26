@@ -1,3 +1,20 @@
+"""
+
+    If an application needs to wait for various events and polling is not
+    possible or desirable, one solution is to use a blocking threads for each
+    events. However, multi-threading comes with its pitfalls and problems.
+    
+    This event loop is a framework that allows an application to wait for
+    various events without using threads. Currently supported events are
+    files being ready for reading and timers (repeating or not).
+    
+    The heart of the loop is basically `select.select()` with a well-chosen
+    timeout.
+    
+    Author: Simon Sapin
+    License: BSD
+
+"""
 import sys
 import os
 import time

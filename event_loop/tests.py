@@ -1,3 +1,11 @@
+"""
+
+    Tests for the event loop.
+    
+    Author: Simon Sapin
+    License: BSD
+
+"""
 import unittest
 import os
 import time
