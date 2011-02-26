@@ -158,6 +158,32 @@ class EventLoop(object):
             return callback
         return decorator
 
+    def push_back_reader(self, file_descriptor, max_block_size=8 * 1024):
+        """
+        Just like block_reader, but allow you to push data "back into tho file".
+        Callbacks get a `push_back` function as a second parameter. You can
+        push back the data you don't want to use yet.
+        
+        Example use case: you get some data in a block, but you need more
+        before it is useful or meaningful. You can push it back instead of
+        keeping track of it yourself.
+        
+        On the next call, the data you pushed back will be prepended to the
+        next block, in the order it was pushed.
+        """
+        def decorator(callback):
+            pushed_back = []
+            
+            @self.block_reader(file_descriptor, max_block_size)
+            def reader(data):
+                if pushed_back:
+                    pushed_back.append(data)
+                    data = ''.join(pushed_back)
+                    pushed_back[:] = []
+                callback(data, pushed_back.append)
+            return callback
+        return decorator
+            
     def line_reader(self, file_descriptor, max_block_size=8 * 1024):
         r"""
         Decorator factory. The decorated callback is called once with
@@ -168,11 +194,14 @@ class EventLoop(object):
         
         The `max_block_size` paramater is just passed to `block_reader()`.
         """
+        # line_reader could be implemeted with push_back_reader, but not doing
+        # so allow us to only search new data for the newline chararcter.
         def decorator(callback):
-            buffers = []
+            partial_line_fragments = []
             
             @self.block_reader(file_descriptor, max_block_size)
             def reader(data):
+                # Loop since there could be more than one line in one block.
                 while 1:
                     try:
                         end = data.index('\n')
@@ -181,13 +210,13 @@ class EventLoop(object):
                         break
                     else:
                         end += 1 # include the newline char
-                        buffers.append(data[:end])
-                        line = ''.join(buffers)
-                        buffers[:] = []
+                        partial_line_fragments.append(data[:end])
+                        line = ''.join(partial_line_fragments)
+                        partial_line_fragments[:] = []
                         callback(line)
                         data = data[end:]
                 if data:
-                    buffers.append(data)
+                    partial_line_fragments.append(data)
             return callback
         return decorator
             

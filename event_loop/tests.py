@@ -352,5 +352,43 @@ class TestLineReader(unittest.TestCase):
             os.close(writer)
         
         
+class TestPushBack(unittest.TestCase):
+    def test_push_back(self):
+        reader, writer = os.pipe()
+        try:
+            data = 'Lorem ipsum dolor sit.'
+            assert os.write(writer, data) == len(data)
+            
+            loop = EventLoop()
+            
+            state = [1]
+            
+            @loop.push_back_reader(reader, max_block_size=5)
+            def new_block(data, push_back):
+                if state[0] == 1:
+                    assert data == 'Lorem'
+                elif state[0] == 2:
+                    assert data == ' ipsu'
+                    push_back(data)
+                elif state[0] == 3:
+                    assert data == ' ipsum dol'
+                    push_back('d')
+                    push_back('ol')
+                elif state[0] == 4:
+                    assert data == 'dolor si'
+                elif state[0] == 5:
+                    assert data == 't.'
+                    loop.stop()
+                else:
+                    assert False
+                state[0] += 1
+            
+            loop.run()
+            assert state[0] == 6
+        finally:
+            os.close(reader)
+            os.close(writer)
+
+
 if __name__ == '__main__':
     unittest.main()
