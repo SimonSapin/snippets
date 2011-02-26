@@ -197,9 +197,9 @@ class TestEventLoop(unittest.TestCase):
             loop = EventLoop()
             nb_reads = [0]
 
-            @loop.watch_for_reading(reader)
-            def incoming():
-                assert os.read(reader, 255) == 'foo'
+            @loop.block_reader(reader)
+            def incoming(data):
+                assert data == 'foo'
                 nb_reads[0] += 1
                 loop.stop()
             
@@ -232,11 +232,9 @@ class TestEventLoop(unittest.TestCase):
                 assert os.write(writer, 'foo') == 3
                 nb_writes[0] += 1
 
-            @loop.watch_for_reading(reader)
-            def incoming():
-                # According to `select.select()` there is some data,
-                # so os.read() won't block.
-                assert os.read(reader, 255) == 'foo'
+            @loop.block_reader(reader)
+            def incoming(data):
+                assert data == 'foo'
                 nb_reads[0] += 1
             
             loop.run()

@@ -135,6 +135,26 @@ class EventLoop(object):
             self._readers[file_descriptor] = callback
             return callback
         return decorator
+    
+    def block_reader(self, file_descriptor, max_block_size=8 * 1024):
+        """
+        Decorator factory. As soon as some data is available for reading on
+        the file descriptor, the decorated callback is called with a block
+        of up to `max_block_size` bytes.
+        
+        If data comes slowly, blocks will be smaller than max_block_size and
+        contain just what can be read without blocking. In that case, the value
+        of max_block_size does not matter.
+        """
+        def decorator(callback):
+            @self.watch_for_reading(file_descriptor)
+            def reader():
+                # According to `select.select()` there is some data,
+                # so os.read() won't block.
+                data = os.read(file_descriptor, max_block_size)
+                callback(data)
+            return callback
+        return decorator
 
     def _normalize_fd(self, fd):
         if isinstance(fd, (int, long)):
