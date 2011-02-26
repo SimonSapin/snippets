@@ -37,6 +37,17 @@ class MockCallback(object):
         self.nb_calls += 1
 
 
+class FileLike(object):
+    """
+    A "file-like" object with just `fileno()`
+    """
+    def __init__(self, fd):
+        self.fd = fd
+    
+    def fileno(self):
+        return self.fd
+
+
 class TestTimerManager(unittest.TestCase):
 
     def test_empty_timer_list(self):
@@ -191,21 +202,32 @@ class TestTimerManager(unittest.TestCase):
 
 
 class TestEventLoop(unittest.TestCase):
+    def _simple(self, reader, writer):
+        loop = EventLoop()
+        nb_reads = [0]
+
+        @loop.block_reader(reader)
+        def incoming(data):
+            assert data == 'foo'
+            nb_reads[0] += 1
+            loop.stop()
+        
+        assert os.write(writer, 'foo') == 3
+        loop.run()
+        assert nb_reads[0] == 1
+
     def test_simple_pipe(self):
         reader, writer = os.pipe()
         try:
-            loop = EventLoop()
-            nb_reads = [0]
+            self._simple(reader, writer)
+        finally:
+            os.close(reader)
+            os.close(writer)
 
-            @loop.block_reader(reader)
-            def incoming(data):
-                assert data == 'foo'
-                nb_reads[0] += 1
-                loop.stop()
-            
-            assert os.write(writer, 'foo') == 3
-            loop.run()
-            assert nb_reads[0] == 1
+    def test_filelike(self):
+        reader, writer = os.pipe()
+        try:
+            self._simple(FileLike(reader), writer)
         finally:
             os.close(reader)
             os.close(writer)

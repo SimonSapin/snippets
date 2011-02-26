@@ -114,8 +114,9 @@ class EventLoop(object):
     
     def watch_for_reading(self, file_descriptor):
         """
-        Decorator factory for watching a file descriptor. The decorated
-        callback is called when the file descriptor is ready for reading.
+        Decorator factory for watching a file descriptor. When the file
+        descriptor is ready for reading, it is passed as a paramater to
+        the decorated callback.
         
         Takes either a file descriptor (integer) or a file object with a
         `fileno()` method that returns one.
@@ -149,10 +150,10 @@ class EventLoop(object):
         """
         def decorator(callback):
             @self.watch_for_reading(file_descriptor)
-            def reader():
+            def reader(fd):
                 # According to `select.select()` there is some data,
                 # so os.read() won't block.
-                data = os.read(file_descriptor, max_block_size)
+                data = os.read(fd, max_block_size)
                 callback(data)
             return callback
         return decorator
@@ -208,7 +209,7 @@ class EventLoop(object):
                 ready = []
             self._timers.run()
             for fd in ready:
-                self._readers[fd]()
+                self._readers[fd](fd)
 
     def stop(self):
         """
