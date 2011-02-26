@@ -10,7 +10,7 @@ import unittest
 import os
 import time
 
-from event_loop import TimerManager, EventLoop
+from event_loop import TimerManager, EventLoop, line_reader
 
 
 class TestingTimeFunction(object):
@@ -193,36 +193,43 @@ class TestTimerManager(unittest.TestCase):
 class TestEventLoop(unittest.TestCase):
     def test_pipe(self):
         reader, writer = os.pipe()
-        loop = EventLoop()
-        nb_reads = [0]
-        nb_writes = [0]
-        
-        duration = .1
-        interval = .0095
-        expected_nb = 10
-        assert expected_nb == duration // interval
-        # Avoid a race condition between the loop stop and the last read.
-        assert expected_nb < duration / interval
-        
-        start = time.time()
-        loop.add_timer(duration)(loop.stop)
-        
-        @loop.add_timer(interval, repeat=True)
-        def write_something():
-            os.write(writer, 'foo')
-            nb_writes[0] += 1
+        try:
+            loop = EventLoop()
+            nb_reads = [0]
+            nb_writes = [0]
+            
+            duration = .1
+            interval = .0095
+            expected_nb = 10
+            assert expected_nb == duration // interval
+            # Avoid a race condition between the loop stop and the last read.
+            assert expected_nb < duration / interval
+            
+            start = time.time()
+            loop.add_timer(duration)(loop.stop)
+            
+            @loop.add_timer(interval, repeat=True)
+            def write_something():
+                os.write(writer, 'foo')
+                nb_writes[0] += 1
 
-        @loop.watch_for_reading(reader)
-        def incoming():
-            # According to `select.select()` there is some data,
-            # so os.read() won't block.
-            assert os.read(reader, 255) == 'foo'
-            nb_reads[0] += 1
+            @loop.watch_for_reading(reader)
+            def incoming():
+                # According to `select.select()` there is some data,
+                # so os.read() won't block.
+                assert os.read(reader, 255) == 'foo'
+                nb_reads[0] += 1
+            
+            loop.run()
+            assert round(time.time() - start, 2) == duration
+            assert nb_writes[0] == expected_nb, nb_writes
+            assert nb_reads[0] == expected_nb, nb_reads
+        finally:
+            os.close(reader)
+            os.close(writer)
+
+
         
-        loop.run()
-        assert round(time.time() - start, 2) == duration
-        assert nb_writes[0] == expected_nb, nb_writes
-        assert nb_reads[0] == expected_nb, nb_reads
         
 if __name__ == '__main__':
     unittest.main()
