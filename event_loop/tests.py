@@ -10,7 +10,7 @@ import unittest
 import os
 import time
 
-from event_loop import TimerManager, EventLoop, line_reader
+from event_loop import TimerManager, EventLoop
 
 
 class TestingTimeFunction(object):
@@ -272,7 +272,7 @@ class TestLineReader(unittest.TestCase):
                     loop.stop()
             
             lines = []
-            line_reader(loop, reader, block_size=5)(lines.append)
+            loop.line_reader(reader, max_block_size=5)(lines.append)
                 
             loop.run()
             
@@ -310,7 +310,7 @@ class TestLineReader(unittest.TestCase):
                     loop.stop()
             
             lines = []
-            @line_reader(loop, reader)
+            @loop.line_reader(reader)
             def new_line(line):
                 lines.append(line)
                 expected_time = {

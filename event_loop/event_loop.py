@@ -129,7 +129,8 @@ class EventLoop(object):
         available and avoid blocking, without the file actually being in
         non-blocking mode.
         """
-        file_descriptor = self._normalize_fd(file_descriptor)
+        if not isinstance(file_descriptor, (int, long)):
+            file_descriptor = file_descriptor.fileno()
         
         def decorator(callback):
             self._readers[file_descriptor] = callback
@@ -156,11 +157,38 @@ class EventLoop(object):
             return callback
         return decorator
 
-    def _normalize_fd(self, fd):
-        if isinstance(fd, (int, long)):
-            return fd
-        else:
-            return fd.fileno()
+    def line_reader(self, file_descriptor, max_block_size=8 * 1024):
+        r"""
+        Decorator factory. The decorated callback is called once with
+        every line (terminated by '\n') as they become available.
+        
+        Just like with `some_file.readline()`, the trailing newline character
+        is included.
+        
+        The `max_block_size` paramater is just passed to `block_reader()`.
+        """
+        def decorator(callback):
+            buffers = []
+            
+            @self.block_reader(file_descriptor, max_block_size)
+            def reader(data):
+                while 1:
+                    try:
+                        end = data.index('\n')
+                    except ValueError:
+                        # no newline here
+                        break
+                    else:
+                        end += 1 # include the newline char
+                        buffers.append(data[:end])
+                        line = ''.join(buffers)
+                        buffers[:] = []
+                        callback(line)
+                        data = data[end:]
+                if data:
+                    buffers.append(data)
+            return callback
+        return decorator
             
     def run(self):
         """
@@ -192,43 +220,10 @@ class EventLoop(object):
         self._running = False
 
 
-def line_reader(loop, fd, block_size=1024):
-    """
-    Wrap a read callback to read lines:
-    
-        @line_reader(loop, sys.stdin)
-        def new_line(line):
-            print 'Read on line standard input: %r' % line
-    """
-    fd = loop._normalize_fd(fd)
-    def decorator(callback):
-        buffers = []
-        @loop.watch_for_reading(fd)
-        def reader():
-            buf = os.read(fd, block_size)
-            while 1:
-                try:
-                    end = buf.index('\n')
-                except ValueError:
-                    # no newline here
-                    break
-                else:
-                    end += 1 # include the newline char
-                    buffers.append(buf[:end])
-                    line = ''.join(buffers)
-                    buffers[:] = []
-                    callback(line)
-                    buf = buf[end:]
-            if buf:
-                buffers.append(buf)
-        return callback
-    return decorator
-
-
 if __name__ == '__main__':
     loop = EventLoop()
     
-    @line_reader(loop, sys.stdin)
+    @loop.line_reader(sys.stdin)
     def new_line(line):
         line = line.strip()
         if line == 'exit':
