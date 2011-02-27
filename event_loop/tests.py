@@ -1,6 +1,8 @@
 """
 
     Tests for the event loop.
+
+    See http://exyr.org/2011/event-loop/
     
     Author: Simon Sapin
     License: BSD

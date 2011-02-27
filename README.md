@@ -8,3 +8,5 @@ See the associated [blog posts](http://exyr.org/tags/snippets/):
     ](http://exyr.org/2011/random-pronounceable-passwords/) with Markov chains
  * [Programatically open multiple GNOME Terminal tabs
     ](http://exyr.org/2011/gnome-terminal-tabs/)
+ * [Single-threaded event loop for file input and timers
+    ](http://exyr.org/2011/event-loop/)

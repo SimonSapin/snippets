@@ -1,6 +1,8 @@
 """
 
     Read packets in a specific format instead of blocks or lines.
+
+    See http://exyr.org/2011/event-loop/
     
     Author: Simon Sapin
     License: BSD

@@ -11,6 +11,8 @@
     The heart of the loop is basically `select.select()` with a well-chosen
     timeout.
     
+    See http://exyr.org/2011/event-loop/
+    
     Author: Simon Sapin
     License: BSD
 
