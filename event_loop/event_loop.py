@@ -18,7 +18,102 @@
 import sys
 import os
 import time
+import itertools
 import select
+import decimal
+
+
+# float('inf') is only officially supported form Python 2.6, while decimal
+# is there since 2.4.
+Infinity = decimal.Decimal('Infinity')
+
+
+class Timer(object):
+    """
+    Create a new timer.
+    If it's `run()` method is called often enough, `callback` will be called
+    (without parameters) `interval` seconds from now (may be a floating point
+    number) and, if `repeat` is true, every `interval` seconds after that.
+    
+    There is no thread or other form of preemption: the callback won't be
+    called if `run()` is not.
+    
+    A repeating timers may miss a few beats if `run()` is not called for more
+    than one interval but is still scheduled for whole numbers of interval
+    after is was created or reset. See the tests for examples
+    """
+    
+    @classmethod
+    def decorate(cls, *args, **kwargs):
+        """
+        Decorator factory:
+        
+            @Timer.decorate(1, repeat=True)
+            def every_second():
+                # ...
+        
+        The decorated function is replaced by the Timer object so you can
+        write eg.
+        
+            every_second.cancel()
+        """
+        def decorator(callback):
+            return cls(callback, *args, **kwargs)
+        return decorator
+
+    def __init__(self, callback, interval, repeat=False,
+                 _time_function=time.time):
+        # `_time_function` is meant as a dependency injection for testing.
+        assert interval > 0
+        self._callback = callback
+        self._interval = interval
+        self._repeat = repeat
+        self._now = _time_function
+        self.reset()
+    
+    def reset(self):
+        """
+        Cancel currently scheduled expiry and start again as if the timer
+        was created just now.
+        """
+        self._expiry = self._now() + self._interval
+        
+    def cancel(self):
+        """Cancel the timer. The same timer object should not be used again."""
+        self._expiry = None
+        
+    def __call__(self):
+        """Decorated callbacks can still be called at any time."""
+        self._callback()
+    
+    def run(self):
+        """
+        Return whether the timer will trigger again. (Repeating or not expired
+        yet.)
+        """
+        if self._expiry is None:
+            return False
+        if self._now() < self._expiry:
+            return True
+        if self._repeat:
+            # Would have expired that many times since last run().
+            times = (self._now() - self._expiry) // self._interval + 1
+            self._expiry += times * self._interval
+        else:
+            self._expiry = None
+        # Leave a chance to the callback to call `reset()`.
+        self()
+        return self._expiry is not None
+    
+    def sleep_time(self):
+        """
+        Return the amount of time before `run()` does anything, or
+        Decimal('Infinity') for a canceled or expired non-repeating timer.
+        """
+        if self._expiry is None:
+            return Infinity
+        else:
+            return max(self._expiry - self._now(), 0)
 
 
 class TimerManager(object):
@@ -32,17 +127,17 @@ class TimerManager(object):
         `_time_function` is meant as a dependency injection for testing.
         """
         self._timers = []
-        self._now = _time_function
+        self._time_function = _time_function
         
     def add_timer(self, timeout, callback, repeat=False):
         """
         Add a timer with `callback`, expiring `timeout` seconds from now and,
         if `repeat` is true, every `timeout` seconds after that.
         """
-        assert timeout > 0
-        next = self._now() + timeout # Next time this timer expires
-        interval = timeout if repeat else None
-        self._timers.append((next, interval, callback))
+        timer = Timer(callback, timeout, repeat=repeat,
+                      _time_function= self._time_function)
+        self._timers.append(timer)
+        return timer
     
     def run(self):
         """
@@ -51,40 +146,20 @@ class TimerManager(object):
         Each callback is called at most once, even if a repeating timer
         expired several times since last time `run()` was called.
         """
-        indices_to_remove = []
-        
-        for index, (next, interval, callback) in enumerate(self._timers):
-            if next > self._now():
-                continue
-            callback()
-            if interval:
-                # Repeating timer: update the expiry time.
-                # Has expired that many times since last run().
-                # Call self._now() again since callback() may have taken time.
-                times = (self._now() - next) // interval + 1
-                next += times * interval
-                self._timers[index] = (next, interval, callback)
-            else:
-                # Not repeating: remove.
-                # Removing disrupts iteration: do it later.
-                indices_to_remove.append(index)
-        
-        # indices_to_remove is in increasing order.
-        # Remove in decreasing order since removing changes the meaning of
-        # greater indices.
-        for index in reversed(indices_to_remove):
-            del self._timers[index]
+        # Run all timers and remove those who won't trigger again.
+        self._timers = [timer for timer in self._timers if timer.run()]
+
     
     def sleep_time(self):
         """
         How much time you can wait before `run()` does something.
         Return None if no timer is registered.
         """
-        if not self._timers:
-            return None
-        earliest, _, _ = min(self._timers)
-        sleep = earliest - self._now()
-        return sleep if sleep > 0 else 0
+        return min(itertools.chain(
+            # Have at least one element. min() raises on empty sequences.
+            [Infinity],
+            (timer.sleep_time() for timer in self._timers)
+        ))
             
 
 class EventLoop(object):
@@ -108,8 +183,7 @@ class EventLoop(object):
                 # callback code
         """
         def decorator(callback):
-            self._timers.add_timer(timeout, callback, repeat)
-            return callback
+            return self._timers.add_timer(timeout, callback, repeat)
         return decorator
     
     def watch_for_reading(self, file_descriptor):
@@ -228,6 +302,8 @@ class EventLoop(object):
         self._running = True
         while self._running:
             timeout = self._timers.sleep_time()
+            if timeout == Infinity:
+                timeout = None
             if self._readers:
                 ready, _, _ = select.select(
                     self._readers.keys(), [], [], timeout)
@@ -253,16 +329,16 @@ class EventLoop(object):
 if __name__ == '__main__':
     loop = EventLoop()
     
+    @loop.add_timer(5, repeat=True)
+    def timeout():
+        print 'No new line in 5 seconds. Stopping now.'
+        loop.stop()
+    
     @loop.line_reader(sys.stdin)
     def new_line(line):
-        line = line.strip()
-        if line == 'exit':
-            loop.stop()
-        print line
-    
-    @loop.add_timer(5, repeat=True)
-    def five():
-        print '5 seconds passed.'
-    
-    print 'Echoing lines. Type "exit" to stop.'
+        timeout.reset()
+        print 'Echo:', line.strip()
+        
+    print 'Echoing lines.'
     loop.run()
+    print 'Exit.'
