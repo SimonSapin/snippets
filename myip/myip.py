@@ -8,16 +8,25 @@
     
     Running as of this writing at http://myip.ep.io/ and http://ip.exyr.org/
     
-    This was made just to try http://www.ep.io/ out. They use IPv6 so
-    IPv4 addresses may look like ::ffff:127.0.0.1
+    This was made just to try http://www.ep.io/ out.
 
     Author: Simon Sapin
     License: BSD
 
 """
 
+import re
+import socket
+
+
 def application(environ, start_response):
-    start_response('200 OK', [('Content-Type', 'text/plain')])
     # ep.io uses IPv6, and a Gunicorn bug makes REMOTE_ADDR empty in that case.
-    return [environ['HTTP_X_FORWARDED_FOR']]
+    ip = environ['HTTP_X_FORWARDED_FOR']
+    if re.match('::ffff:\d+\.\d+\.\d+.\d+', ip):
+        # IPv4 in v6, eg ::ffff:127.0.0.1
+        ip = ip[len('::ffff:'):]
+    host = socket.getfqdn(ip)
+    start_response('200 OK', [('Content-Type', 'text/html')])
+    return ['Connecting from <strong>%(ip)s</strong> @ '
+            '<strong>%(host)s</strong>.' % locals()]
 
