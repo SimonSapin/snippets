@@ -10,3 +10,5 @@ See the associated [blog posts](http://exyr.org/tags/snippets/):
     ](http://exyr.org/2011/gnome-terminal-tabs/)
  * [Single-threaded event loop for file input and timers
     ](http://exyr.org/2011/event-loop/)
+ * [Run a script on file changes with inotify
+    ](http://exyr.org/2011/inotify-run/)

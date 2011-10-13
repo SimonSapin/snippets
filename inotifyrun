@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# Run the script given as arguments once and then every time a file changes
+# in the current directory.
+#
+# You may need to install the `inotify-tools` package.
+#
+# See more details at http://exyr.org/2011/inotify-run/
+#
+# Author: Simon Sapin
+# License: BSD
+
+
+FORMAT=$(echo -e "\033[1;33m%w%f\033[0m written")
+"$@"
+while inotifywait -qre close_write --format "$FORMAT" .
+do
+    "$@"
+done
